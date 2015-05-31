@@ -17,10 +17,10 @@
 
 #define MAX_SENSORS		2
 
-#define TRIGGER1_PIN	17
-#define ECHO1_PIN		4
-#define TRIGGER2_PIN	22
-#define ECHO2_PIN		27
+#define TRIGGER1_PIN	27
+#define ECHO1_PIN		17
+#define TRIGGER2_PIN	10
+#define ECHO2_PIN		22
 
 // description for /proc/interrupt
 #define ECHO_PIN_DESC		"HC-SR04 echo interrupt"
@@ -82,7 +82,7 @@ static irqreturn_t hc_sr04_irq2_handler(int irq, void *dev_id, struct pt_regs *r
 
 static int __init hc_sr04_init(void) {
 	int err;
-	
+
 	if ((err = gpio_request(ECHO1_PIN, ECHO_PIN_DESC))) {
 		PERROR("gpio_request", err);
 		return -1;
@@ -91,7 +91,7 @@ static int __init hc_sr04_init(void) {
 		PERROR("gpio_request", err);
 		return -1;
 	}
-	
+
 	if ((err = gpio_request(TRIGGER1_PIN, TRIGGER_PIN_DESC))) {
 		PERROR("gpio_request", err);
 		return -1;
@@ -100,7 +100,7 @@ static int __init hc_sr04_init(void) {
 		PERROR("gpio_request", err);
 		return -1;
 	}
-	
+
 	if (((irq1id = gpio_to_irq(ECHO1_PIN)) < 0)) {
 		PERROR("gpio_request", err);
 		return -1;
@@ -109,7 +109,7 @@ static int __init hc_sr04_init(void) {
 		PERROR("gpio_request", err);
 		return -1;
 	}
-	
+
 	// IRQF_DISABLED indicates a fast interrupt handler (won't be interrupted)
 	if ((err = request_irq(irq1id, (irq_handler_t) hc_sr04_irq1_handler, IRQF_TRIGGER_FALLING,
 	DEVICE_DESC, DEV_ID))) {
@@ -121,22 +121,22 @@ static int __init hc_sr04_init(void) {
 		PERROR("request_irq", err);
 		return -1;
 	}
-	
+
 	if ((err = register_chrdev(DEV_MAJOR, DEVICE_DESC, &fops)) < 0) {
 		PERROR("register_chrdev", err);
 		return -1;
 	}
-	
+
 #if DEV_MAJOR == 0
 	dev_major = err;
 	printk(KERN_INFO "HC-SR04: Device major: %hhu\n", dev_major);
 #endif
-	
+
 	gpio_direction_output(TRIGGER1_PIN, 0);
 	gpio_direction_output(TRIGGER2_PIN, 0);
-	
+
 	printk(KERN_INFO "HC-SR04: Driver initialized\n");
-	
+
 	return 0;
 }
 
@@ -183,20 +183,20 @@ static ssize_t hc_sr04_read(struct file *filp, char *buffer, size_t length, loff
 	u64 distance;
 	u64 *buf64 = (u64 *) buffer;
 	int err;
-	
+
 	if (mutex_lock_interruptible(&triggered_mutex))
 		return -ERESTARTSYS;
-	
+
 	if (length != sizeof(distance)) {
 		printk(KERN_DEBUG "HC-SR04: Invalid size\n");
 		RELEASE_TRIGGERED_MUTEX_RETURN(-EINVAL);
 	}
-	
+
 	if (ktime_to_ns(ktime_sub(ktime_get(), last_call)) < 600 * 1000) {
 		printk(KERN_DEBUG "HC-SR04: Consecutive calls\n");
 		RELEASE_TRIGGERED_MUTEX_RETURN(-EBUSY);
 	}
-	
+
 	switch (((int) filp->private_data)) {
 		case 0:
 		data1_ready = 0;
@@ -216,12 +216,11 @@ static ssize_t hc_sr04_read(struct file *filp, char *buffer, size_t length, loff
 			return -EIO;
 		}*/
 		break;
-		
+
 		case 1:
 		data2_ready = 0;
 		gpio_set_value(TRIGGER2_PIN, 1);
 		udelay(10);
-		#warning delay é bigolas
 		gpio_set_value(TRIGGER2_PIN, 0);
 		start = ktime_get();
 		// https://www.kernel.org/doc/htmldocs/device-drivers/API-wait-event-timeout.html
@@ -236,17 +235,17 @@ static ssize_t hc_sr04_read(struct file *filp, char *buffer, size_t length, loff
 			return -EIO;
 		}*/
 		break;
-		
+
 		default:
 		printk(KERN_DEBUG "HC-SR04: Invalid device minor %d\n", (int) filp->private_data);
 		RELEASE_TRIGGERED_MUTEX_RETURN(-EINVAL);
 	}
-	
+
 	if ((err = put_user(distance, buf64)) < 0) {
 		PERROR("put_user", err);
 		RELEASE_TRIGGERED_MUTEX_RETURN(-EACCES);
 	}
-	
+
 	//printk(KERN_DEBUG "HC-SR04: success!\n");
 	last_call = ktime_get();
 	RELEASE_TRIGGERED_MUTEX_RETURN(sizeof(distance));
